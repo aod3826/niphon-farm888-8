@@ -186,7 +186,98 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Herd Health Index & 4-Pillar Breakdown (PRD Section 11 & Section 14) */}
+        {summary?.health_score_pct !== undefined && (
+          <div className="mt-4 pt-4 border-t border-slate-800/80">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg font-mono border ${
+                  summary.health_score_pct >= 85 
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : summary.health_score_pct >= 70
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                }`}>
+                  {summary.health_score_pct}%
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>ดัชนีสุขภาพฝูงสุกรรวม (Herd Health Index)</span>
+                    <span className="text-[10px] text-slate-400 font-mono">(4 มิติการประเมิน)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    คำนวณจากอัตราป่วย, อัตราตาย, ความสำเร็จงานสุขอนามัย, และความปลอดภัยทางชีวภาพ
+                  </div>
+                </div>
+              </div>
+
+              {summary.health_score_breakdown && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-1 rounded-lg text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-300">
+                    สัดส่วนป่วย: <span className="text-emerald-400 font-bold">{summary.health_score_breakdown.morbidity_score}/30</span>
+                  </span>
+                  <span className="px-2 py-1 rounded-lg text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-300">
+                    อัตราตาย: <span className="text-emerald-400 font-bold">{summary.health_score_breakdown.mortality_score}/25</span>
+                  </span>
+                  <span className="px-2 py-1 rounded-lg text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-300">
+                    งานสำเร็จ: <span className="text-emerald-400 font-bold">{summary.health_score_breakdown.task_score}/25</span>
+                  </span>
+                  <span className="px-2 py-1 rounded-lg text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-300">
+                    Biosecurity: <span className="text-emerald-400 font-bold">{summary.health_score_breakdown.biosecurity_score}/20</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Herd Outbreak & Cluster Warning Banner (PRD Section 11 & Mode C) */}
+      {summary?.outbreak_alerts && summary.outbreak_alerts.length > 0 && (
+        <div className="space-y-3">
+          {summary.outbreak_alerts.map((alert: any) => (
+            <div 
+              key={alert.id}
+              className={`p-4 sm:p-5 rounded-2xl border relative overflow-hidden shadow-xl ${
+                alert.level === 'RED'
+                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+                  : alert.level === 'ORANGE'
+                  ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                  : 'bg-yellow-950/40 border-yellow-500/50 text-yellow-200'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-xl mt-0.5 ${
+                    alert.level === 'RED' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-white">🚨 {alert.title}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-black/40 border border-current">
+                        ความเสี่ยงระดับ {alert.level}
+                      </span>
+                      <span className="text-xs text-slate-300 font-mono">
+                        ({alert.barn_name} • พบอาการ {alert.affected_count} ตัว)
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                      {alert.description}
+                    </p>
+                    <div className="mt-2 text-xs font-semibold text-white bg-black/30 p-2.5 rounded-xl border border-white/10 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                      <span>มาตรการควบคุมทันที: {alert.containment_protocol}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* AI Daily Farm Vet Briefing (PRD Section 14) */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">

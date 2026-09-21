@@ -185,6 +185,22 @@ export interface TreatmentRecord {
   administered_by: string;
   followup_date: string;
   status: 'active' | 'completed' | 'discontinued';
+  followups?: {
+    date: string;
+    progression: 'improving' | 'stable' | 'deteriorating';
+    notes: string;
+    recorded_by: string;
+  }[];
+}
+
+export interface OutbreakAlert {
+  barn_id: string;
+  barn_name: string;
+  pens: string[];
+  symptom_cluster: string;
+  cases_count: number;
+  level: 'warning' | 'critical';
+  recommendations: string[];
 }
 
 export interface VaccinationRecord {

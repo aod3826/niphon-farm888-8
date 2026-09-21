@@ -1,4 +1,4 @@
-import { Farm, User, Barn, Pen, Animal, HealthCase, FarmTask, TreatmentRecord, VaccinationRecord, MortalityEvent, BiosecurityLog, FarmProtocol, AITriageResponse } from '../../src/types/farm.ts';
+import { Farm, User, Barn, Pen, Animal, HealthCase, FarmTask, TreatmentRecord, VaccinationRecord, MortalityEvent, BiosecurityLog, FarmProtocol, AITriageResponse, OutbreakAlert } from '../../src/types/farm.ts';
 
 export const INITIAL_FARM: Farm = {
   id: 'farm-01',
@@ -442,7 +442,33 @@ export const INITIAL_TREATMENTS: TreatmentRecord[] = [
     prescribed_by: 'น.สพ. ดร. ปริญญา ภักดี (ว.สพ. 12940)',
     administered_by: 'กานดา มีสุข',
     followup_date: '2026-09-22',
-    status: 'active'
+    status: 'active',
+    followups: [
+      {
+        date: '2026-09-20 10:30',
+        progression: 'improving',
+        notes: 'ลูกสุกรเริ่มตื่นตัวดีขึ้น อุจจาระเหลวลดลง ดื่มน้ำเกลือแร่ได้ดี',
+        recorded_by: 'กานดา มีสุข'
+      }
+    ]
+  },
+  {
+    id: 'treat-02',
+    case_id: 'case-104',
+    animal_code: 'แม่สุกร M128',
+    pen_name: 'คอก A03',
+    treatment_name: 'ยาลดไข้/ต้านการอักเสบ Flunixin Meglumine + น้ำเกลือ',
+    route: 'ฉีดเข้ากล้ามเนื้อ (IM)',
+    dosage: '2.2 มก./กก. (10 ซีซี)',
+    frequency: 'วันละ 1 ครั้ง ติดต่อกัน 2 วัน',
+    start_date: '2026-09-21',
+    end_date: '2026-09-23',
+    withdrawal_meat_days: 14,
+    prescribed_by: 'น.สพ. ดร. ปริญญา ภักดี (ว.สพ. 12940)',
+    administered_by: 'วิทยา สุขใส',
+    followup_date: '2026-09-22',
+    status: 'active',
+    followups: []
   }
 ];
 
@@ -531,14 +557,99 @@ class FarmStore {
   biosecurity: BiosecurityLog[] = [...INITIAL_BIOSECURITY];
   protocols: FarmProtocol[] = [...INITIAL_PROTOCOLS];
 
-  // Helper getters
+  // Herd Outbreak & Cluster Detection (PRD Section 11 & 50: Mode C)
+  detectOutbreaks(): OutbreakAlert[] {
+    const alerts: OutbreakAlert[] = [];
+    const activeCases = this.cases.filter(c => c.status !== 'resolved');
+
+    // Group active cases by barn
+    const barnGroups: Record<string, HealthCase[]> = {};
+    for (const c of activeCases) {
+      if (!barnGroups[c.barn_id]) barnGroups[c.barn_id] = [];
+      barnGroups[c.barn_id].push(c);
+    }
+
+    for (const [barnId, bCases] of Object.entries(barnGroups)) {
+      const barn = this.barns.find(b => b.id === barnId);
+      const barnName = barn ? barn.name : bCases[0].barn_name;
+      
+      // Check for respiratory cluster (coughing, rapid breathing, fever)
+      const respCases = bCases.filter(c => 
+        c.symptoms.some(s => s.code === 'coughing' || s.code === 'rapid_breathing') ||
+        c.chief_complaint.includes('ไอ') || c.chief_complaint.includes('หายใจ')
+      );
+      const totalRespHits = respCases.reduce((sum, c) => sum + c.affected_count, 0);
+
+      if (totalRespHits >= 3) {
+        alerts.push({
+          barn_id: barnId,
+          barn_name: barnName,
+          pens: Array.from(new Set(respCases.map(c => c.pen_name))),
+          symptom_cluster: 'กลุ่มอาการทางเดินหายใจ (ไอแห้ง / หายใจมีเสียง)',
+          cases_count: totalRespHits,
+          level: totalRespHits >= 5 ? 'critical' : 'warning',
+          recommendations: [
+            'ตรวจวัดความเร็วลมและระดับแอมโมเนียที่ท้ายโรงเรือนทันที',
+            'ล้างทำความสะอาดร่องระบายมูลเพื่อลดไอระเหยที่ระคายเคืองปอด',
+            'ประสานสัตวแพทย์เพื่อตรวจฟังเสียงปอดและพิจารณาส่ง swab ทางห้องปฏิบัติการ'
+          ]
+        });
+      }
+
+      // Check for gastrointestinal cluster
+      const entericCases = bCases.filter(c => 
+        c.symptoms.some(s => s.code === 'diarrhea') ||
+        c.chief_complaint.includes('ถ่ายเหลว') || c.chief_complaint.includes('ท้องเสีย')
+      );
+      const totalEntericHits = entericCases.reduce((sum, c) => sum + c.affected_count, 0);
+
+      if (totalEntericHits >= 3) {
+        alerts.push({
+          barn_id: barnId,
+          barn_name: barnName,
+          pens: Array.from(new Set(entericCases.map(c => c.pen_name))),
+          symptom_cluster: 'กลุ่มอาการทางเดินอาหาร (อุจจาระร่วง / ถ่ายเหลว)',
+          cases_count: totalEntericHits,
+          level: 'warning',
+          recommendations: [
+            'ตรวจเช็กความสะอาดของรางน้ำและระบบจุกจ่ายน้ำดื่ม',
+            'ผสมผงเกลือแร่ (Oral Electrolytes) ในน้ำดื่มเพื่อป้องกันภาวะขาดน้ำ',
+            'พ่นน้ำยาฆ่าเชื้อหน้าคอกและทางเดินทุก 12 ชั่วโมง'
+          ]
+        });
+      }
+    }
+
+    return alerts;
+  }
+
+  // Helper getters with Farm Health Score breakdown (PRD Section 34)
   getSummary() {
     const sickCount = this.animals.filter(a => a.status === 'sick' || a.status === 'isolated').length;
     const monitoringCount = this.animals.filter(a => a.status === 'monitoring').length;
     const urgentCasesCount = this.cases.filter(c => c.triage_level === 'RED' && c.status !== 'resolved').length;
     const openCasesCount = this.cases.filter(c => c.status !== 'resolved').length;
     const pendingTasksCount = this.tasks.filter(t => t.status !== 'completed').length;
+    const completedTasksCount = this.tasks.filter(t => t.status === 'completed').length;
+    const totalTasks = this.tasks.length || 1;
+    const taskCompletionRate = Math.round((completedTasksCount / totalTasks) * 100);
+
     const todayMortalityCount = this.mortality.filter(m => m.date.startsWith('2026-09-21')).reduce((sum, m) => sum + m.count, 0);
+    const passedBio = this.biosecurity.filter(b => b.status === 'passed').length;
+    const biosecurityScore = Math.round((passedBio / (this.biosecurity.length || 1)) * 100);
+
+    // Morbidity Rate (%)
+    const morbidityPct = Number(((sickCount / this.farm.total_heads) * 100).toFixed(1));
+    // Mortality Rate (%)
+    const mortalityPct = Number(((todayMortalityCount / this.farm.total_heads) * 100).toFixed(2));
+
+    // Farm Health Score formula: 100 base, deduction for sick pigs, urgent cases, and biosecurity issues
+    let healthScore = 100 - (sickCount * 4) - (urgentCasesCount * 12) - (morbidityPct * 2);
+    if (biosecurityScore < 100) healthScore -= 5;
+    if (taskCompletionRate < 70) healthScore -= 5;
+    healthScore = Math.max(40, Math.min(100, Math.round(healthScore)));
+
+    const outbreaks = this.detectOutbreaks();
 
     return {
       farm: this.farm,
@@ -549,8 +660,17 @@ class FarmStore {
       open_cases: openCasesCount,
       pending_tasks: pendingTasksCount,
       today_mortality: todayMortalityCount,
-      health_trend: 'Attention Needed (โรงเรือน A มีเคสเฝ้าระวัง 1 รายการ)',
-      health_score_pct: 88,
+      health_trend: urgentCasesCount > 0 ? 'Critical Attention Required' : sickCount > 0 ? 'Attention Needed' : 'Healthy & Stable',
+      health_score_pct: healthScore,
+      health_score_breakdown: {
+        overall_score: healthScore,
+        biosecurity_compliance_pct: biosecurityScore,
+        morbidity_rate_pct: morbidityPct,
+        mortality_rate_pct: mortalityPct,
+        task_completion_pct: taskCompletionRate,
+        risk_level: healthScore >= 85 ? 'ต่ำ (Low Risk)' : healthScore >= 70 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Risk)'
+      },
+      outbreak_alerts: outbreaks,
       weather: {
         location: 'พัทลุง',
         temp_c: 30.5,
@@ -609,6 +729,86 @@ class FarmStore {
     }
 
     return newCase;
+  }
+
+  reviewCase(
+    caseId: string, 
+    status: 'approved' | 'modified' | 'rejected', 
+    clinicalNotes: string, 
+    confirmedDiagnosis?: string, 
+    reviewedBy?: string
+  ): HealthCase | null {
+    const targetCase = this.cases.find(c => c.id === caseId);
+    if (!targetCase) return null;
+
+    targetCase.vet_review = {
+      reviewed_by: reviewedBy || 'น.สพ. ดร. ปริญญา ภักดี',
+      reviewed_at: new Date().toISOString(),
+      status: status || 'approved',
+      clinical_notes: clinicalNotes || '',
+      confirmed_diagnosis: confirmedDiagnosis || undefined
+    };
+    targetCase.status = 'resolved';
+
+    // Update animal status back to monitoring or healthy
+    if (targetCase.animal_id) {
+      const anim = this.animals.find(a => a.id === targetCase.animal_id);
+      if (anim) {
+        anim.status = 'monitoring';
+        if (!anim.timeline) anim.timeline = [];
+        anim.timeline.push({
+          id: `t-${Date.now()}`,
+          date: new Date().toISOString().split('T')[0],
+          type: 'treatment',
+          title: `สัตวแพทย์ตรวจรับรองการรักษา ${targetCase.case_number}`,
+          description: `${confirmedDiagnosis || 'ตรวจรักษาเรียบร้อย'}: ${clinicalNotes}`,
+          performed_by: targetCase.vet_review.reviewed_by
+        });
+      }
+    }
+
+    return targetCase;
+  }
+
+  recordTreatmentFollowup(
+    treatmentId: string,
+    progression: 'improving' | 'stable' | 'deteriorating',
+    notes: string,
+    recordedBy: string
+  ): TreatmentRecord | null {
+    const treat = this.treatments.find(t => t.id === treatmentId);
+    if (!treat) return null;
+
+    if (!treat.followups) treat.followups = [];
+    const newFollowup = {
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      progression,
+      notes,
+      recorded_by: recordedBy || 'ผู้บันทึก'
+    };
+    treat.followups.unshift(newFollowup);
+
+    if (progression === 'improving') {
+      treat.status = 'active';
+    } else if (progression === 'deteriorating') {
+      // Create high priority task for escalation
+      this.tasks.unshift({
+        id: `task-${Date.now()}`,
+        farm_id: this.farm.id,
+        title: `🚨 อาการทรุดลง: ${treat.animal_code} (${treat.pen_name})`,
+        description: `ผลติดตามการรักษาพบอาการทรุดลง: ${notes} โปรดแจ้งสัตวแพทย์ปรับแผนการรักษา`,
+        priority: 'high',
+        category: 'clinical_check',
+        case_id: treat.case_id,
+        pen_name: treat.pen_name,
+        assigned_to_name: 'น.สพ. ดร. ปริญญา ภักดี',
+        assigned_to_role: 'veterinarian',
+        due_at: new Date(Date.now() + 2 * 3600000).toISOString(),
+        status: 'pending'
+      });
+    }
+
+    return treat;
   }
 
   updateTaskStatus(taskId: string, status: 'pending' | 'in_progress' | 'completed', completedBy?: string) {
