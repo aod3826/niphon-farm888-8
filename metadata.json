@@ -1,0 +1,10 @@
+{
+  "name": "AI สัตวแพทย์ประจำฟาร์มสุกร",
+  "description": "ระบบบริหารสุขภาพฟาร์มสุกรและ AI Veterinary Decision Support Agent ประจำฟาร์ม (นิพนธ์ฟาร์ม พัทลุง) คัดกรองอาการด่วน ติดตามโรค และจัดการงานสุขภาพสัตว์",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
